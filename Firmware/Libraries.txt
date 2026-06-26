@@ -1,1 +1,10 @@
-
+WiFi
+ArduinoJson
+PubSubClient
+MAX30105
+U8g2
+Adafruit Unified Sensor
+Adafruit MPU6050
+Adafruit ADXL345
+Adafruit LIS3DH
+HTTPClient
