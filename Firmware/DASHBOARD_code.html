@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>IndusCoin Live Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap"
+rel="stylesheet">
+<style>
+ :root{
+ --bg:#364c6e; --card:#0b1220; --muted:#98a0b3; --accent:#7c5cff; --good:#22c55e;
+ }
+ *{box-sizing:border-box;font-family:Inter,system-ui,Arial;color:#eaf2ff}
+ body{
+ margin:0;
+ background:linear-gradient(180deg,#071021,#071728);
+ -webkit-font-smoothing:antialiased;
+ }
+ .container{max-width:980px;margin:28px auto;padding:22px;}
+ header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
+ h1{margin:0;font-size:22px;font-weight:700}
+ .subtitle{font-size:13px;color:var(--muted)}
+ .dot{width:12px;height:12px;border-radius:50%}
+ .dot.on{background:var(--good)}
+ .dot.off{background:#c53030}
+ .status{display:flex;align-items:center;gap:12px}
+ .grid{display:flex;flex-wrap:wrap;gap:16px}
+ .card{
+ flex:1 1 220px;
+ min-width:220px;
+ background:rgba(255,255,255,0.03);
+ padding:18px;
+ border-radius:14px;
+ box-shadow:0 8px 28px rgba(2,6,23,0.6);
+ display:flex;
+ flex-direction:column;
+ justify-content:space-between;
+ }
+ .label{font-size:13px;color:var(--muted);margin-bottom:8px}
+ .value{font-size:30px;font-weight:800;line-height:1}
+ .small{font-size:13px;color:var(--muted)}
+ #sparkline svg{width:100%;height:46px}
+ .history{
+ display:none;
+ margin-top:16px;
+ background:rgba(255,255,255,0.02);
+ padding:12px;
+ border-radius:10px;
+ max-height:340px;
+ overflow:auto;
+ }
+ .history.open{display:block}
+ .msgToggle{border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:13px}
+ button.exportBtn{
+ background:var(--accent);border:none;color:white;padding:9px 14px;
+ border-radius:10px;cursor:pointer;font-size:13px;margin-left:12px;
+ }
+ .topControls{display:flex;gap:8px;align-items:center}
+ pre#lastPayload{
+ white-space:pre-wrap;
+ font-size:12px;
+ margin:6px 0 0;
+ color:#e6eefc;
+ }
+ /* History table */
+ .history table{
+ width:100%;
+ border-collapse:collapse;
+ font-size:12px;
+ }
+ .history thead{
+ position:sticky;
+ top:0;
+ background:rgba(15,23,42,0.95);
+ z-index:1;
+ }
+ .history th,
+ .history td{
+ padding:6px 8px;
+ border-bottom:1px solid rgba(148,163,184,0.15);
+ text-align:left;
+ }
+ .history th.sortable{
+ cursor:pointer;
+ user-select:none;
+ }
+ .history th.sortable::after{
+ content:" ⇅";
+ font-size:10px;
+ opacity:0.4;
+ }
+ .history th.sortable.asc::after{
+ content:" ↑";
+ }
+ .history th.sortable.desc::after{
+ content:" ↓";
+ }
+ @media (max-width:820px){
+ .grid{flex-direction:column}
+ .card{min-width:unset}
+ }
+</style>
+</head>
+<body>
+<div class="container">
+ <header>
+ <div>
+ <h1>IndusCoin Live</h1>
+ <div class="subtitle">Realtime telemetry dashboard</div>
+ </div>
+ <div class="status">
+ <div id="connDot" class="dot off"></div>
+ <div id="connText" class="small">Disconnected</div>
+ </div>
+ </header>
+ <div class="grid">
+ <div class="card">
+ <div>
+ <div class="label">Device ID</div>
+ <div class="value" id="deviceId">—</div>
+ <div class="small" id="lastSeen">last: —</div>
+ </div>
+ </div>
+ <div class="card">
+ <div>
+ <div class="label">Temperature</div>
+ <div class="value" id="tempVal">— °C</div>
+ </div>
+ <div class="small"></div>
+ </div>
+ <div class="card">
+ <div>
+ <div class="label">Heart Rate</div>
+ <div class="value" id="hrVal">— bpm</div>
+ </div>
+ <div id="sparkline"></div>
+ </div>
+ <div class="card">
+ <div>
+ <div class="label">SpO₂</div>
+ <div class="value" id="spo2Val">— %</div>
+ <div class="small">Oxygen saturation</div>
+ </div>
+ </div>
+ <div class="card">
+ <div>
+ <div class="label">Steps</div>
+ <div class="value" id="stepsVal">—</div>
+ </div>
+ </div>
+ </div>
+ <div class="card">
+ <div>
+ <div class="label">Health Status</div>
+ <div class="value" id="mlStatus">—</div>
+ <div class="small"></div>
+ </div>
+</div>
+ <div class="card">
+ <div>
+ <div class="label">SOS Status</div>
+ <div class="value" id="sosVal">—</div>
+ <div class="small">Emergency button state</div>
+ </div>
+</div>
+ <div style="margin-top:16px; display:flex; justify-content:space-between; align-items:center;">
+ <div class="topControls">
+ <button class="msgToggle" id="toggleHistory">Show messages</button>
+ <button class="exportBtn" id="btnExport">Download CSV</button>
+ </div>
+ <div class="small" id="recordCount">Records: 0</div>
+ </div>
+ <div id="history" class="history" aria-hidden="true">
+ <table id="historyTable">
+ <thead>
+ <tr>
+ <th class="sortable" data-key="timeISO">Time</th>
+ <th class="sortable" data-key="device_id">Device</th>
+ <th class="sortable" data-key="temp">Temp (°C)</th>
+ <th class="sortable" data-key="hr">HR (bpm)</th>
+ <th class="sortable" data-key="spo2">SpO₂ (%)</th>
+ <th class="sortable" data-key="steps">Steps</th>
+ </tr>
+ </thead>
+ <tbody id="historyBody">
+ <!-- filled dynamically -->
+ </tbody>
+ </table>
+ <div class="small" style="margin-top:6px;">Latest raw message:</div>
+ <pre id="lastPayload"></pre>
+ </div>
+</div>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0"></script>
+<script>
+/* ========= EDIT THESE ========= */
+const MQTT_USER = "Miniproject";
+const MQTT_PASS = "Miniproject@1";
+const MQTT_HOST = "d734bc451989465f9d07c03830b7e048.s1.eu.hivemq.cloud"; // e.g.
+abcd1234.s2.eu.hivemq.cloud
+const BROKER_URL = `wss://${MQTT_HOST}:8884/mqtt`;
+const SUB_TOPIC = "induscoin/v2/+/telemetry";
+const SUB_SUB_TOPIC = "induscoin/v2/+/sos";
+/* ============================== */
+let client;
+let tempHistory = [];
+let hrHistory = [];
+let fullHistory = []; // for CSV + table
+let lastDeviceId = ""; // for CSV filename
+/* ================= ML MODEL ================= */
+let mlModel = null;
+let mlReady = false;
+let sosResetTimer = null;
+async function initML() {
+ mlModel = tf.sequential();
+ mlModel.add(tf.layers.dense({
+ inputShape: [3], // HR, SpO2, Temp
+ units: 8,
+ activation: 'relu'
+ }));
+ mlModel.add(tf.layers.dense({ units: 1 }));
+ mlModel.compile({
+ optimizer: 'adam',
+ loss: 'meanSquaredError'
+ });
+ // Simple supervised training data
+ const trainX = tf.tensor2d([
+ [70, 98, 36.5],
+ [85, 96, 37.2],
+ [100, 94, 38.0],
+ [120, 92, 38.8],
+ [140, 90, 39.5]
+ ]);
+ // 0 = Normal, 1 = Warning, 2 = Critical
+ const trainY = tf.tensor2d([
+ [0],
+ [0],
+ [1],
+ [1],
+ [2]
+ ]);
+ await mlModel.fit(trainX, trainY, {
+ epochs: 120,
+ verbose: 0
+ });
+ mlReady = true;
+ console.log(" ML model ready");
+}
+function predictHealth(hr, spo2, temp) {
+ // CRITICAL
+ if (
+ hr > 130 ||
+ hr < 40 ||
+ spo2 < 90 ||
+ temp > 39.0
+ ) {
+ return "CRITICAL";
+ }
+ // WARNING
+ if (
+ (hr >= 100 && hr <= 130) ||
+ (spo2 >= 90 && spo2 < 95) ||
+ (temp >= 37.5 && temp <= 39.0)
+ ) {
+ return "WARNING";
+ }
+ // NORMAL
+ return "NORMAL";
+}
+// UI references
+const connDot = document.getElementById("connDot");
+const connText = document.getElementById("connText");
+const deviceIdEl = document.getElementById("deviceId");
+const tempVal = document.getElementById("tempVal");
+const hrVal = document.getElementById("hrVal");
+const spo2Val = document.getElementById("spo2Val");
+const stepsVal = document.getElementById("stepsVal");
+const lastSeen = document.getElementById("lastSeen");
+const lastPayload = document.getElementById("lastPayload");
+const historyEl = document.getElementById("history");
+const toggleHistory = document.getElementById("toggleHistory");
+const sparkline = document.getElementById("sparkline");
+const recordCount = document.getElementById("recordCount");
+const historyBody = document.getElementById("historyBody");
+const headerCells = document.querySelectorAll("#historyTable th.sortable");
+const sosVal = document.getElementById("sosVal");
+let sortConfig = { key: "timeISO", dir: "desc" };
+function setConnected(ok){
+ connDot.className = "dot " + (ok ? "on" : "off");
+ connText.innerText = ok ? "Connected" : "Disconnected";
+}
+function prettyTimeObj(){
+ const d = new Date();
+ return {
+ display: d.toLocaleString(),
+ iso: d.toISOString()
+ };
+}
+/* ========= Sparkline (Heart Rate only) ========= */
+function renderSparkline(){
+ const arr = hrHistory;
+ if (arr.length < 2) { sparkline.innerHTML = ""; return; }
+ const max = Math.max(...arr);
+ const min = Math.min(...arr);
+ const range = max - min || 1;
+ const points = arr.map((v,i)=>{
+ const x = (i / (arr.length-1)) * 100;
+ const y = 100 - ((v - min) / range) * 100;
+ return `${x},${y}`;
+ }).join(" ");
+ sparkline.innerHTML = `
+ <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+ <polyline points="${points}"
+ fill="none"
+ stroke="#7c5cff"
+ stroke-width="2"
+ stroke-linecap="round"
+ />
+ </svg>
+ `;
+}
+/* ========= History table render (all logs) ========= */
+function renderHistoryLog(){
+ recordCount.textContent = `Records: ${fullHistory.length}`;
+ if (fullHistory.length === 0){
+ historyBody.innerHTML = '<tr><td colspan="6">No messages yet.</td></tr>';
+ lastPayload.textContent = "No messages yet.";
+ return;
+ }
+ const data = [...fullHistory];
+ const key = sortConfig.key;
+ const dir = sortConfig.dir === "asc" ? 1 : -1;
+ data.sort((a,b)=>{
+ let va = a[key];
+ let vb = b[key];
+ if (key === "timeISO"){
+ if (!va) return 1;
+ if (!vb) return -1;
+ if (va === vb) return 0;
+ return va > vb ? dir : -dir;
+ }
+ // numeric sort for others
+ va = parseFloat(va);
+ vb = parseFloat(vb);
+ if (isNaN(va) && isNaN(vb)) return 0;
+ if (isNaN(va)) return 1;
+ if (isNaN(vb)) return -1;
+ return (va - vb) * dir;
+ });
+ historyBody.innerHTML = data.map(row => {
+ const t = row.time || "-";
+ const dev = row.device_id || "-";
+ const temp = (row.temp ?? "") === "" ? "-" : Number(row.temp).toFixed(2);
+ const hr = (row.hr ?? "") === "" ? "-" : row.hr;
+ const spo2 = (row.spo2 ?? "") === "" ? "-" : row.spo2;
+ const steps = (row.steps ?? "") === "" ? "-" : row.steps;
+ return `
+ <tr>
+ <td>${t}</td>
+ <td>${dev}</td>
+ <td>${temp}</td>
+ <td>${hr}</td>
+ <td>${spo2}</td>
+ <td>${steps}</td>
+ </tr>
+ `;
+ }).join("");
+}
+/* ========= Sort header click handlers ========= */
+headerCells.forEach(th => {
+ th.addEventListener("click", () => {
+ const key = th.dataset.key;
+ if (!key) return;
+ if (sortConfig.key === key){
+ sortConfig.dir = sortConfig.dir === "asc" ? "desc" : "asc";
+ } else {
+ sortConfig.key = key;
+ sortConfig.dir = "asc";
+ }
+ // update header classes
+ headerCells.forEach(h => {
+ h.classList.remove("asc","desc");
+ if (h.dataset.key === sortConfig.key){
+ h.classList.add(sortConfig.dir);
+ }
+ });
+ renderHistoryLog();
+ });
+});
+/* ========= Start MQTT Client ========= */
+function startClient(){
+ client = mqtt.connect(BROKER_URL, {
+ username: MQTT_USER,
+ password: MQTT_PASS,
+ reconnectPeriod: 2000,
+ connectTimeout: 20000
+ });
+ client.on("connect", () => {
+ setConnected(true);
+ client.subscribe(SUB_TOPIC, (err) => {
+ if (err) console.error("Telemetry subscribe error:", err);
+ });
+ client.subscribe(SUB_SUB_TOPIC, (err) => {
+ if (err) console.error("SOS subscribe error:", err);
+ });
+});
+ client.on("offline", () => setConnected(false));
+ client.on("reconnect", () => setConnected(false));
+ client.on("error", (err) => console.error(err));
+ client.on("message", (topic, msg) => {
+ const text = msg.toString();
+ let parsed = null;
+ console.log("MQTT MESSAGE ARRIVED:", topic, msg.toString());
+try {
+ let clean = text.trim();
+ // handle: sos = {...}
+ if (clean.includes("=")) {
+ clean = clean.substring(clean.indexOf("{"));
+ }
+ parsed = JSON.parse(clean);
+ // DEBUG (this WILL run)
+ console.log("RAW MQTT TEXT:", text);
+ console.log("PARSED OBJECT:", parsed);
+} catch (e) {
+ console.warn("Invalid JSON:", text);
+ return;
+}
+ const tObj = prettyTimeObj();
+ const entry = {
+ time: tObj.display,
+ timeISO: tObj.iso,
+ device_id: parsed && parsed.device_id ? parsed.device_id : "unknown",
+ temp: parsed && typeof parsed.temp !== "undefined" ? parsed.temp :
+ (parsed && typeof parsed.temperature !== "undefined" ? parsed.temperature : undefined),
+ hr: parsed && typeof parsed.hr !== "undefined" ? parsed.hr :
+ (parsed && typeof parsed.heart_rate !== "undefined" ? parsed.heart_rate : undefined),
+ spo2: parsed && typeof parsed.spo2 !== "undefined" ? parsed.spo2 :
+ (parsed && typeof parsed.SpO2 !== "undefined" ? parsed.SpO2 : undefined),
+ steps: parsed && typeof parsed.steps !== "undefined" ? parsed.steps : undefined,
+ sos: parsed && typeof parsed.sos !== "undefined" ? parsed.sos : undefined,
+ raw: parsed || text
+
+ };
+ // Device ID UI
+ if (entry.device_id && entry.device_id !== "unknown"){
+ deviceIdEl.innerText = entry.device_id;
+ lastDeviceId = entry.device_id;
+ }
+ // Temperature
+ if (typeof entry.temp !== "undefined"){
+ tempVal.innerText = `${Number(entry.temp).toFixed(2)} °C`;
+ tempHistory.push(Number(entry.temp));
+ if (tempHistory.length > 200) tempHistory.shift();
+ }
+ // Heart rate (+ sparkline)
+ if (typeof entry.hr !== "undefined"){
+ hrVal.innerText = entry.hr > 0 ? entry.hr + " bpm" : "—";
+ hrHistory.push(Number(entry.hr));
+ if (hrHistory.length > 200) hrHistory.shift();
+ renderSparkline(); // HR only
+ }
+ // SpO2
+ if (typeof entry.spo2 !== "undefined"){
+ spo2Val.innerText = entry.spo2 + " %";
+ }
+ // -------- ML HEALTH PREDICTION --------
+if (
+ typeof entry.hr !== "undefined" &&
+ typeof entry.spo2 !== "undefined" &&
+ typeof entry.temp !== "undefined"
+) {
+ const status = predictHealth(
+ Number(entry.hr),
+ Number(entry.spo2),
+ Number(entry.temp)
+ );
+ const mlEl = document.getElementById("mlStatus");
+ if (mlEl) mlEl.innerText = status;
+}
+ // Steps
+ if (typeof entry.steps !== "undefined"){
+ stepsVal.innerText = entry.steps;
+ }
+ // SOS (auto reset after 15 seconds)
+if (entry.sos === true) {
+ sosVal.innerText = "TRUE";
+ // clear previous timer if SOS pressed again
+ if (sosResetTimer) {
+ clearTimeout(sosResetTimer);
+ }
+ sosResetTimer = setTimeout(() => {
+ sosVal.innerText = "—";
+ sosResetTimer = null;
+ }, 15000); // 15 seconds
+}
+ lastSeen.innerText = "last: " + entry.time;
+ // Save ONLY telemetry to history (ignore pure SOS packets)
+if (
+ typeof entry.temp !== "undefined" ||
+ typeof entry.hr !== "undefined" ||
+ typeof entry.spo2 !== "undefined"
+) {
+ fullHistory.push(entry);
+ if (fullHistory.length > 2000) fullHistory.shift();
+}
+ recordCount.textContent = `Records: ${fullHistory.length}`;
+ // Update latest raw payload
+ lastPayload.textContent = `${entry.time}\n${topic}\n${JSON.stringify(entry.raw, null, 2)}`;
+ // If table is visible, re-render
+ if (historyEl.classList.contains("open")){
+ renderHistoryLog();
+ }
+ });
+}
+toggleHistory.addEventListener("click", ()=>{
+ historyEl.classList.toggle("open");
+ const open = historyEl.classList.contains("open");
+ toggleHistory.innerText = open ? "Hide messages" : "Show messages";
+ historyEl.setAttribute("aria-hidden", open ? "false" : "true");
+ if (open) renderHistoryLog();
+});
+// Initial empty state
+renderHistoryLog();
+/* ========= CSV EXPORT (with device + date) ========= */
+document.getElementById("btnExport").onclick = () => {
+ if (fullHistory.length === 0){
+ alert("No data to export yet!");
+ return;
+ }
+ let csv = "time,device_id,temp,hr,spo2,steps\n";
+ fullHistory.forEach(row=>{
+ const safe = (v) => (typeof v === "undefined" || v === null)
+ ? ""
+ : String(v).replace(/,/g, "");
+ csv +=
+`${safe(row.time)},${safe(row.device_id)},${safe(row.temp)},${safe(row.hr)},${safe(row.spo2)},${safe(r
+ow.steps)}\n`;
+ });
+ const blob = new Blob([csv], {type:"text/csv"});
+ const url = URL.createObjectURL(blob);
+ let baseName = lastDeviceId || "induscoin";
+ baseName = baseName.replace(/[^a-z0-9_\-]/gi, "_");
+ const d = new Date();
+ const yyyy = d.getFullYear();
+ const mm = String(d.getMonth() + 1).padStart(2,"0");
+ const dd = String(d.getDate()).padStart(2,"0");
+ const fileName = `induscoin_${baseName}_${yyyy}${mm}${dd}.csv`;
+ const a = document.createElement("a");
+ a.href = url;
+ a.download = fileName;
+ a.click();
+ URL.revokeObjectURL(url);
+};
+// Start ML + MQTT on load
+initML();
+startClient();
+</script>
+</body>
+</html>
